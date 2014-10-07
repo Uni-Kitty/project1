@@ -1,19 +1,16 @@
-package sockets;
-
 import java.io.*;
 import java.net.*;
 
 /**
- *
- * @author darren
+ * Comment
  */
 public class Client {
 
     public static void main(String arg[]) throws IOException, ClassNotFoundException {
 
-        int portNum = 11113;
+        int portNum = 12235;
 
-        Socket socket = new Socket("localhost", portNum);
+        Socket socket = new Socket("amlia.cs.washington.edu", portNum);
 
         // Integer Object to send to Server.
         Integer num = new Integer(50);
