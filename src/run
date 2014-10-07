@@ -1,2 +1,1 @@
-javac Client.java
-java Client
+javac Client.java && java Client
