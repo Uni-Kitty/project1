@@ -8,13 +8,15 @@ import java.nio.*;
 public class Client {
 
     static DatagramSocket socket;
+    static Socket tcpSocket;
     static InetAddress address;
 
     public static void main(String arg[]) throws IOException, ClassNotFoundException, InterruptedException {
         socket = new DatagramSocket();
-        socket.setSoTimeout(500);
+        socket.setSoTimeout(750);
         address = InetAddress.getByName("amlia.cs.washington.edu");
-        byte[] result = sendUDPMessage(0, 1, getByteArrayFromString("hello world"), 12235);
+      	byte[] payload = createPayload(0, 1, getByteArrayFromString("hello world"));
+        byte[] result = sendUDPMessage(payload, 12235);
         
         ByteBuffer b = ByteBuffer.wrap(result);
         //printBits(result);
@@ -34,7 +36,8 @@ public class Client {
             b = ByteBuffer.allocate(size);
             b.putInt(i);
             try {
-                result = sendUDPMessage(secret, 1, b.array(), port);
+		payload = createPayload(secret, 1, b.array());
+                result = sendUDPMessage(payload, port);
                 System.out.println("Success");
             }
             catch (SocketTimeoutException e) {
@@ -44,11 +47,51 @@ public class Client {
         }
         result = receivePacket();
         ByteBuffer b2 = ByteBuffer.wrap(result);
-        int portB = b2.getInt(12);
+        int portTCP = b2.getInt(12);
         int secretB = b2.getInt(16);
-        System.out.println("portB : " + portB);
+        System.out.println("portTCP : " + portTCP);
         System.out.println("secretB : " + secretB);
+
+	tcpSocket = new Socket(address, portTCP);
+	OutputStream outToServer = tcpSocket.getOutputStream();
+	DataOutputStream outStream = new DataOutputStream(outToServer);
+	InputStream inStream = tcpSocket.getInputStream();
+	result = receiveTCPMessage(inStream);
+	ByteBuffer c2 = ByteBuffer.wrap(result);
+	int num2 = c2.getInt(12);
+	int len2 = c2.getInt(16);
+	int secretC = c2.getInt(20);
+        byte byteC = c2.get(24);
+	char c = (char) ((int) byteC);
+	System.out.println("num2 : " + num2);
+	System.out.println("len2 : " + len2);
+	System.out.println("secretC : " + secretC);
+	System.out.println("byteC : " + byteC);
+	System.out.println("c : " + c);
         printBits(result);
+
+	size = len2;
+	while (size % 4 != 0)
+	    size++;
+	byte[] payloadC = new byte[size];
+	for (int i = 0; i < len2; i++)
+	    payloadC[i] = byteC;
+	
+	for (int i = 0; i < num2; i++) {
+	    try {
+		payload = createPayload(secretC, 1, payloadC);
+		printBits(payload);
+		sendTCPMessage(payload, outStream);
+		System.out.println("Success");
+	    }
+	    catch (ConnectException e) {
+		System.out.println("connection refused");
+		Thread.sleep(500);
+		i--;
+	    }
+	}
+	result = receiveTCPMessage(inStream);
+	printBits(result);
     }
     
     public static byte[] get2ByteArray(int value) {
@@ -86,10 +129,9 @@ public class Client {
         return result;
         
     }
-    
-    private static byte[] sendUDPMessage(int secretInt, int stepInt, byte[] payload, int port) throws IOException, InterruptedException {
-        
-        byte[] digits = get2ByteArray(345);
+
+    private static byte[] createPayload(int secretInt, int stepInt, byte[] payload) {
+	byte[] digits = get2ByteArray(345);
         byte[] secret = get4ByteArray(secretInt);
         byte[] step = get2ByteArray(stepInt);
         byte[] payload_len = get4ByteArray(payload.length);
@@ -122,8 +164,36 @@ public class Client {
             byte b = buf[i];
             
         }
-        
-        //printBits(buf);
+
+	return buf;
+    }
+    
+    private static void sendTCPMessage(byte[] buf, DataOutputStream outStream) throws IOException, InterruptedException {
+	System.out.println("Sending packet..");
+	outStream.write(buf, 0, buf.length);
+	Thread.sleep(500);
+    }
+
+    private static byte[] receiveTCPMessage(InputStream inStream) throws IOException {
+	byte[] result = new byte[64];
+	System.out.println("Waiting for response..");
+	inStream.read(result);
+	return result;
+    }
+
+    /*    private static byte[] sendAndReceiveTCPMessage(byte[] buf) throws IOException, InterruptedException {
+	OutputStream outToServer = tcpSocket.getOutputStream();
+	DataOutputStream outStream = new DataOutputStream(outToServer);
+	System.out.println("Sending packet..");
+	outStream.write(buf, 0, buf.length);
+	System.out.println("Success");
+	byte[] result = new byte[64];
+	System.out.println("Waiting for response..");
+	tcpSocket.getInputStream().read(result);
+	return result;
+    } */
+
+    private static byte[] sendUDPMessage(byte[] buf, int port) throws IOException, InterruptedException {
         
         DatagramPacket out = new DatagramPacket(buf, buf.length, address, port);
         byte[] result = new byte[64];
