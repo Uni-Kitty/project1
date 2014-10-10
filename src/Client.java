@@ -9,9 +9,7 @@ import java.nio.*;
  */
 public class Client {
 
-	// delay before retrying after socket exception or connection refused in phase D
-	private static final int TCP_FAILURE_DELAY = 100;
-	private static final int MAX_FAILURES = 10; // max failures for phase B or phase D
+	private static final int MAX_TIMEOUTS = 10; // max timeouts for phase B
 	private static final int UDP_TIMEOUT = 100;
 	private static final int DELAY_BETWEEN_STAGES = 100;
 	private static final int RETRY_DELAY = 2000; // delay between restarting entire run
@@ -54,63 +52,53 @@ public class Client {
     	udpSocket = new DatagramSocket();
         address = InetAddress.getByName(URL);
         udpSocket.setSoTimeout(UDP_TIMEOUT);
-        String phase = "A";
     	try {
         	doStageA();
-        	phase = "B";
         	Thread.sleep(DELAY_BETWEEN_STAGES);
 			doStageB();
-			phase = "C";
 		    tcpSocket = new Socket(address, tcp_port);
         	Thread.sleep(DELAY_BETWEEN_STAGES);
         	doStageC();
-        	phase = "D";
         	Thread.sleep(DELAY_BETWEEN_STAGES);
 			doStageD();
-		} catch (SomethingWrongException e) {
-        	System.out.println("\nStage " + phase + " failed " + MAX_FAILURES + " times, starting over...");
+		} catch (TooManyTimeoutsException e) {
+        	System.out.println("\nStage B timed out " + MAX_TIMEOUTS + " times, starting over...");
 			return false;
 		}
     	return true;
     }
     
-    private static void doStageA() throws IOException, InterruptedException, SomethingWrongException {
+    private static void doStageA() throws IOException, InterruptedException {
     	System.out.println("*** Commence STAGE A ***");
-    	try {
-          	byte[] payload = createPayload(0, 1, getByteArrayFromString("hello world"));
-          	printBits(payload);
-            byte[] result = sendUDPMessage(payload, 12235);
-            ByteBuffer buffer = ByteBuffer.wrap(result);
-            num = buffer.getInt(12);
-            len = buffer.getInt(16);
-            udp_port = buffer.getInt(20);
-            secretA = buffer.getInt(24);
-            System.out.println("*** STAGE A Success ***");
-            System.out.println("num : " + num);
-            System.out.println("len : " + len);
-            System.out.println("udp_port : " + udp_port);
-        }
-        catch (SocketTimeoutException e) {
-            throw new SomethingWrongException();
-        }
+      	byte[] payload = createPayload(0, 1, getByteArrayFromString("hello world"));
+        byte[] result = sendUDPMessage(payload, 12235);
+        ByteBuffer buffer = ByteBuffer.wrap(result);
+        num = buffer.getInt(12);
+        len = buffer.getInt(16);
+        udp_port = buffer.getInt(20);
+        secretA = buffer.getInt(24);
+        System.out.println("*** STAGE A Success ***");
+        System.out.println("num : " + num);
+        System.out.println("len : " + len);
+        System.out.println("udp_port : " + udp_port);
     }
     
-    private static void doStageB() throws SomethingWrongException, IOException, InterruptedException {
+    private static void doStageB() throws TooManyTimeoutsException, IOException, InterruptedException {
         System.out.println("*** Commence STAGE B ***");
         for (int i = 0; i < num; i++) {
             System.out.print("packet " + i + " : ");
-            ByteBuffer buffer = ByteBuffer.allocate(len);
+            ByteBuffer buffer = ByteBuffer.allocate(len + 4);
             buffer.putInt(i);
         	byte[] payload = createPayload(secretA, 1, buffer.array());
             int failureCount = 0;
             boolean success = false;
             while (!success) {
-            	if (failureCount == MAX_FAILURES)
-            		throw new SomethingWrongException();
+            	if (failureCount == MAX_TIMEOUTS)
+            		throw new TooManyTimeoutsException();
 	            try {
 	                byte[] result = sendUDPMessage(payload, udp_port);
 	                ByteBuffer resultBuffer = ByteBuffer.wrap(result);
-	                System.out.println("success, ack_packet_id " + resultBuffer.getInt(12));
+	                System.out.println("success ( ack_packet_id " + resultBuffer.getInt(12) + " )");
 	                success = true;
 	            }
 	            catch (SocketTimeoutException e) {
@@ -118,9 +106,8 @@ public class Client {
 	                failureCount++;
 	            }
             }
-            System.out.println("success");
         }
-        byte[] finalPacket = receivePacket();
+        byte[] finalPacket = receiveUDPPacket();
         ByteBuffer finalPacketBuffer = ByteBuffer.wrap(finalPacket);
         tcp_port = finalPacketBuffer.getInt(12);
         secretB = finalPacketBuffer.getInt(16);
@@ -130,8 +117,7 @@ public class Client {
     
     private static void doStageC() throws IOException {
 		System.out.println("*** Commence STAGE C ***");
-		InputStream inStream = tcpSocket.getInputStream();
-		byte[] result = receiveTCPMessage(inStream);
+		byte[] result = receiveTCPMessage();
 		ByteBuffer buffer = ByteBuffer.wrap(result);
 		num2 = buffer.getInt(12);
 		len2 = buffer.getInt(16);
@@ -145,49 +131,21 @@ public class Client {
 		System.out.println("c : " + c);
     }
     
-    private static void doStageD() throws IOException, InterruptedException, SomethingWrongException {
+    private static void doStageD() throws IOException, InterruptedException {
 		System.out.println("*** Commence STAGE D ***");
 		DataOutputStream outStream = new DataOutputStream(tcpSocket.getOutputStream());
-		InputStream inStream = tcpSocket.getInputStream();
 		byte[] data = new byte[len2];
 		for (int i = 0; i < len2; i++)
 		    data[i] = byteC;
 		for (int i = 0; i < num2; i++) {
 			System.out.print("packet " + i + " : ");
-			int failureCount = 0;
-			boolean success = false;
-			while (!success) {
-			    if (failureCount == MAX_FAILURES)
-			        throw new SomethingWrongException();
-		        try {
-				    byte[] payload = createPayload(secretC, 1, data);
-				    sendTCPMessage(payload, outStream);
-				    System.out.println("success");
-				    success = true;
-		        }
-		        catch (ConnectException e) {
-		            failureCount++;
-				    System.out.print("connection refused ");
-				    Thread.sleep(TCP_FAILURE_DELAY);
-		        }
-		        catch (SocketException e2) {
-		            failureCount++;
-		            e2.printStackTrace();
-				    System.out.print("socket exception ");
-				    Thread.sleep(TCP_FAILURE_DELAY);
-		        }
-		    }
+		    byte[] payload = createPayload(secretC, 1, data);
+		    outStream.write(payload, 0, payload.length);
+		    System.out.println("success");
 		}
-		byte[] result = receiveTCPMessage(inStream);
+		byte[] result = receiveTCPMessage();
 		ByteBuffer buffer = ByteBuffer.wrap(result);
 		secretD = buffer.getInt(12);
-		if (secretD == 0) {
-		    System.out.println("secretD came back as 0 :(");
-		    System.out.println("bits from response:");
-		    printBits(result);
-		    System.out.println("starting over...");
-		    throw new SomethingWrongException();
-		}
     }
     
     public static byte[] get2ByteArray(int value) {
@@ -228,8 +186,10 @@ public class Client {
         byte[] step = get2ByteArray(stepInt);
         byte[] payload_len = get4ByteArray(payload.length);
         int size = 12 + payload.length;
+        // align to 4 bytes
         while (size % 4 != 0)
             size++;
+        // now copy everything to one byte[]
         byte[] buf = new byte[size];
         int i = 0;
         for (byte b : payload_len) {
@@ -254,14 +214,10 @@ public class Client {
         }
         return buf;
     }
-    
-    private static void sendTCPMessage(byte[] buf, DataOutputStream outStream) throws IOException, InterruptedException {
-		outStream.write(buf, 0, buf.length);
-    }
 
-    private static byte[] receiveTCPMessage(InputStream inStream) throws IOException {
+    private static byte[] receiveTCPMessage() throws IOException {
 		byte[] result = new byte[64];
-		inStream.read(result);
+		tcpSocket.getInputStream().read(result);
 		return result;
     }
 
@@ -274,13 +230,19 @@ public class Client {
         return result;
     }
     
-    private static byte[] receivePacket() throws IOException {
+    /**
+     * Receives a UDP packet
+     */
+    private static byte[] receiveUDPPacket() throws IOException {
         byte[] result = new byte[64];
         DatagramPacket dp = new DatagramPacket(result, result.length);
         udpSocket.receive(dp);
         return result;
     }
     
+    /**
+     * For debugging, prints bits in 4 byte rows
+     */
     private static void printBits(byte[] buf) {
         int i = 0;
         for (byte b : buf) {
@@ -295,7 +257,7 @@ public class Client {
         }
     }
     
-    private static class SomethingWrongException extends Exception {
+    private static class TooManyTimeoutsException extends Exception {
     	
     }
 }
