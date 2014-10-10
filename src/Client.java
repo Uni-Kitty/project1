@@ -38,7 +38,7 @@ public class Client {
         while (!run()) {
         	Thread.sleep(RETRY_DELAY);
         }
-        System.out.println("*All secrets revealed!");
+        System.out.println("All secrets revealed!");
         System.out.println("secretA : " + secretA);
         System.out.println("secretB : " + secretB);
         System.out.println("secretC : " + secretC);
@@ -99,11 +99,11 @@ public class Client {
 	            try {
 	                byte[] result = sendUDPMessage(payload, udp_port);
 	                ByteBuffer resultBuffer = ByteBuffer.wrap(result);
-	                System.out.println("success ( ack_packet_id " + resultBuffer.getInt(12) + " )");
+	                System.out.println("success. ack_packet_id : " + resultBuffer.getInt(12));
 	                success = true;
 	            }
 	            catch (SocketTimeoutException e) {
-	                System.out.print("timeout ");
+	                System.out.print("timeout, ");
 	                failureCount++;
 	            }
             }
