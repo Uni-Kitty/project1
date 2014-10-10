@@ -38,6 +38,7 @@ public class Client {
         while (!run()) {
         	Thread.sleep(RETRY_DELAY);
         }
+        System.out.println("*All secrets revealed!");
         System.out.println("secretA : " + secretA);
         System.out.println("secretB : " + secretB);
         System.out.println("secretC : " + secretC);
@@ -146,6 +147,7 @@ public class Client {
 		byte[] result = receiveTCPMessage();
 		ByteBuffer buffer = ByteBuffer.wrap(result);
 		secretD = buffer.getInt(12);
+        System.out.println("*** STAGE D Success ***");
     }
     
     public static byte[] get2ByteArray(int value) {
