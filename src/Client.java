@@ -99,7 +99,7 @@ public class Client {
 	            try {
 	                byte[] result = sendUDPMessage(payload, udp_port);
 	                ByteBuffer resultBuffer = ByteBuffer.wrap(result);
-	                System.out.println("success. ack_packet_id : " + resultBuffer.getInt(12));
+	                System.out.println("success, ack_packet_id : " + resultBuffer.getInt(12));
 	                success = true;
 	            }
 	            catch (SocketTimeoutException e) {
